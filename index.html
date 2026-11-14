@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MyEyes — controle o cursor com os olhos</title>
+  <meta name="description" content="Mova o cursor e clique usando apenas o movimento dos olhos, com a webcam comum. Gratuito, roda no navegador e o vídeo nunca sai do seu dispositivo.">
+  <meta name="theme-color" content="#0b1020">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b1020'/%3E%3Cpath d='M6 32c8-14 18-20 26-20s18 6 26 20c-8 14-18 20-26 20S14 46 6 32z' fill='none' stroke='%235eead4' stroke-width='4'/%3E%3Ccircle cx='32' cy='32' r='9' fill='%235eead4'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body data-state="welcome">
+
+  <!-- 1. Boas-vindas -->
+  <section id="welcome" class="screen">
+    <div class="card">
+      <h1><span class="logo" aria-hidden="true">👁</span> MyEyes</h1>
+      <p class="lead">Mova o cursor e clique usando <strong>apenas o movimento dos olhos</strong>. Funciona no navegador, com a webcam comum — nada para instalar.</p>
+      <ol class="steps">
+        <li><strong>Permita a câmera.</strong> O vídeo é processado no seu dispositivo e nunca é enviado a ninguém.</li>
+        <li><strong>Olhe para os 9 círculos</strong> que aparecem na tela. Não precisa clicar em nada.</li>
+        <li><strong>Fixe o olhar em um botão</strong> por cerca de 1 segundo para clicar.</li>
+      </ol>
+      <ul class="tips">
+        <li>💡 Luz de frente para o rosto (evite janela atrás de você).</li>
+        <li>📏 Fique a 50–70 cm da tela, com a câmera na altura dos olhos.</li>
+        <li>🪑 Apoie a cabeça confortavelmente e tente não mexê-la após calibrar.</li>
+      </ul>
+      <p id="welcome-error" class="error" role="alert" hidden></p>
+      <button id="btn-start" class="big primary" autofocus>Ativar câmera e começar</button>
+      <p class="small">Só este primeiro botão precisa de clique (mouse, toque, Enter ou Espaço) — o navegador exige uma ação para liberar a câmera. Um acompanhante pode ajudar. Depois disso, tudo funciona só com o olhar.</p>
+    </div>
+  </section>
+
+  <!-- 2. Carregando -->
+  <section id="loading" class="screen" hidden>
+    <div class="card center">
+      <div class="spinner" aria-hidden="true"></div>
+      <p id="loading-text" role="status">Carregando…</p>
+    </div>
+  </section>
+
+  <!-- 3. Calibração -->
+  <section id="calib" class="screen calib" hidden>
+    <p id="calib-label" class="calib-label" role="status"></p>
+    <p id="calib-hint" class="calib-hint" role="alert"></p>
+    <div id="calib-dot" class="calib-dot" aria-hidden="true"><i></i></div>
+    <p class="calib-esc">Esc para cancelar</p>
+
+    <div id="calib-result" class="card center" hidden>
+      <h2>Calibração concluída</h2>
+      <p id="calib-quality" class="lead"></p>
+      <p id="calib-tip" class="small"></p>
+      <div class="row">
+        <button class="big primary" data-gaze data-action="calib-accept">✔ Continuar</button>
+        <button class="big" data-gaze data-action="calib-retry">↻ Refazer</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4. Aplicativo -->
+  <main id="app" hidden>
+    <header class="topbar">
+      <div class="brand"><span aria-hidden="true">👁</span> MyEyes</div>
+      <div id="face-status" class="badge" data-ok="false" role="status">Procurando rosto…</div>
+      <div class="spacer"></div>
+      <button data-gaze data-action="pause">⏸ Pausar</button>
+      <button data-gaze data-action="recalibrate">🎯 Recalibrar</button>
+    </header>
+
+    <div class="message-bar">
+      <div id="message" class="message" aria-live="polite"></div>
+      <button class="accent" data-gaze data-action="speak">🔊 Falar</button>
+      <button data-gaze data-action="clear">✕ Limpar</button>
+    </div>
+
+    <nav class="tabs" role="tablist" aria-label="Seções">
+      <button role="tab" data-gaze data-action="tab" data-tab="phrases">💬 Frases</button>
+      <button role="tab" data-gaze data-action="tab" data-tab="keyboard">⌨ Teclado</button>
+      <button role="tab" data-gaze data-action="tab" data-tab="settings">⚙ Ajustes</button>
+    </nav>
+
+    <section id="tab-phrases" class="panel" role="tabpanel"></section>
+    <section id="tab-keyboard" class="panel" role="tabpanel" hidden></section>
+    <section id="tab-settings" class="panel" role="tabpanel" hidden></section>
+
+    <div id="face-warning" class="warning" role="alert" hidden>Não encontro seu rosto. Fique de frente para a câmera.</div>
+  </main>
+
+  <!-- Pausado -->
+  <div id="paused" class="screen overlay" hidden>
+    <div class="card center">
+      <h2>⏸ Pausado</h2>
+      <p>O olhar não aciona nada enquanto estiver pausado.</p>
+      <button class="big primary" data-gaze data-resume data-action="resume">▶ Continuar</button>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+
+  <video id="cam" playsinline muted></video>
+
+  <div id="gaze-cursor" hidden aria-hidden="true">
+    <svg viewBox="0 0 64 64">
+      <circle class="track" cx="32" cy="32" r="26"></circle>
+      <circle id="cursor-progress" class="progress" cx="32" cy="32" r="26"></circle>
+    </svg>
+    <span class="dot"></span>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

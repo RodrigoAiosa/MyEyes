@@ -1,0 +1,11 @@
+{
+  "name": "myeyes",
+  "version": "0.1.0",
+  "description": "Controle o cursor com os olhos usando apenas a webcam. Feito para quem só consegue mover os olhos.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "npx --yes serve .",
+    "test": "node --test \"tests/*.test.js\""
+  }
+}
