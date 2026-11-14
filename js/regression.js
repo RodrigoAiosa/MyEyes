@@ -221,7 +221,7 @@ export function fitFromGroups(groups, width, height, lambda = null) {
 }
 
 export function qualityLabel(errPx) {
-  if (errPx < 150) return { level: 'boa', text: 'Boa' };
-  if (errPx < 280) return { level: 'media', text: 'Razoável' };
-  return { level: 'baixa', text: 'Baixa' };
+  if (errPx < 150) return { level: 'boa' };
+  if (errPx < 280) return { level: 'media' };
+  return { level: 'baixa' };
 }

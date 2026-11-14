@@ -9,6 +9,7 @@ export const DEFAULTS = {
   showCamera: true,
   sound: true,
   autoAdjust: true,
+  fullscreen: true,
 };
 
 export function loadSettings() {

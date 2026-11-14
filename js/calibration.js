@@ -1,6 +1,7 @@
 // Calibração de 9 pontos: o usuário apenas OLHA para cada ponto (sem cliques).
 import { fitFromGroups, qualityLabel } from './regression.js';
 import { isFixation, dropSaccades } from './fixation.js';
+import { t } from './i18n.js';
 
 // 13 pontos: grade 3x3 + 4 interiores. Os interiores melhoram muito a precisão no meio da tela,
 // onde o usuário mais olha. Ordem em "serpente" para os olhos não atravessarem a tela toda.
@@ -38,7 +39,7 @@ export class Calibration {
     const groups = [];
     for (let i = 0; i < CALIB_POINTS.length; i++) {
       const [fx, fy] = CALIB_POINTS[i];
-      label.textContent = `Ponto ${i + 1} de ${CALIB_POINTS.length} — olhe fixamente para o círculo`;
+      label.textContent = t('calib.point', { n: i + 1, total: CALIB_POINTS.length });
       dot.style.left = `${fx * 100}%`;
       dot.style.top = `${fy * 100}%`;
       dot.classList.remove('pulse');
@@ -90,10 +91,10 @@ export class Calibration {
         waitingSince = performance.now();
         hint.textContent = '';
       } else if (performance.now() - waitingSince > 1500) {
-        hint.textContent = fr.found ? 'Mantenha os olhos abertos.' : 'Não encontro seu rosto — fique de frente para a câmera.';
+        hint.textContent = fr.found ? t('calib.hint.eyes') : t('calib.hint.noface');
       }
       if (performance.now() - waitingSince > MAX_WAIT_MS) {
-        throw new Error('Rosto não detectado durante a calibração.');
+        throw new Error(t('calib.err.noface'));
       }
     }
     return samples;

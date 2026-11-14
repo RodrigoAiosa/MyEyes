@@ -1,6 +1,7 @@
 // Câmera + MediaPipe Face Landmarker (roda 100% no navegador; o vídeo nunca sai do dispositivo).
 import { FaceLandmarker, FilesetResolver } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs';
 import { extractFeatures, blinkScore } from './features.js';
+import { t } from './i18n.js';
 
 const WASM_BASE = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm';
 const MODEL_URL =
@@ -19,7 +20,7 @@ export class EyeTracker {
   }
 
   async start(onStatus = () => {}) {
-    onStatus('Pedindo acesso à câmera…');
+    onStatus(t('loading.camera'));
     this.stream = await navigator.mediaDevices.getUserMedia({
       video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user', frameRate: { ideal: 30 } },
       audio: false,
@@ -27,7 +28,7 @@ export class EyeTracker {
     this.video.srcObject = this.stream;
     await this.video.play();
 
-    onStatus('Carregando o modelo de rastreamento (só na primeira vez)…');
+    onStatus(t('loading.model'));
     const fileset = await FilesetResolver.forVisionTasks(WASM_BASE);
     const options = (delegate) => ({
       baseOptions: { modelAssetPath: MODEL_URL, delegate },
@@ -82,18 +83,18 @@ export class EyeTracker {
   }
 }
 
-/** Mensagem amigável (pt-BR) para erros de câmera/modelo. */
+/** Mensagem amigável (no idioma atual) para erros de câmera/modelo. */
 export function describeError(err) {
   switch (err?.name) {
     case 'NotAllowedError':
     case 'SecurityError':
-      return 'O acesso à câmera foi negado. Libere a câmera nas permissões do navegador (ícone de cadeado ao lado do endereço) e tente de novo.';
+      return t('err.denied');
     case 'NotFoundError':
     case 'OverconstrainedError':
-      return 'Nenhuma câmera foi encontrada neste dispositivo.';
+      return t('err.notfound');
     case 'NotReadableError':
-      return 'A câmera está em uso por outro programa. Feche-o e tente novamente.';
+      return t('err.busy');
     default:
-      return `Não foi possível iniciar o rastreamento: ${err?.message || err}. Verifique a conexão com a internet (o modelo é baixado na primeira vez).`;
+      return t('err.generic', { msg: err?.message || err });
   }
 }

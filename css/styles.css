@@ -75,6 +75,7 @@ button:disabled { opacity: .4; }
 }
 .overlay { background: rgba(5, 8, 18, .94); z-index: 50; }
 .card {
+  position: relative;
   width: min(720px, 100%);
   background: var(--panel);
   border-radius: 28px;
@@ -136,7 +137,7 @@ button:disabled { opacity: .4; }
 .message::after { content: "▍"; color: var(--accent); margin-left: 2px; animation: caret 1s steps(1) infinite; }
 .message:empty::after { content: none; }
 @keyframes caret { 50% { opacity: 0; } }
-.message:empty::before { content: "Escolha uma frase ou escreva no teclado…"; color: #5b6488; font-size: 1.2rem; }
+.message:empty::before { content: attr(data-placeholder); color: #5b6488; font-size: 1.2rem; }
 .message-bar button { min-width: 140px; }
 .tabs { display: flex; gap: .6rem; }
 .tabs button { flex: 1; min-height: 64px; font-size: 1.2rem; background: var(--panel); }
@@ -153,11 +154,11 @@ button:disabled { opacity: .4; }
 .kb-row .w6 { grid-column: span 6; }
 .kb-row .w2 { grid-column: span 2; }
 
-#tab-settings { grid-template-columns: repeat(2, 1fr); align-content: start; grid-auto-rows: minmax(88px, auto); }
+#tab-settings { grid-template-columns: repeat(2, 1fr); align-content: start; grid-auto-rows: minmax(72px, auto); }
 .setting { display: flex; align-items: center; gap: .8rem; background: var(--panel); border-radius: var(--radius); padding: .6rem 1rem; }
 .setting .name { flex: 1; font-weight: 600; }
 .setting .val { min-width: 4.5ch; text-align: center; font-size: 1.4rem; font-weight: 700; color: var(--accent); }
-.setting button { min-width: 72px; min-height: 64px; font-size: 1.6rem; }
+.setting button { min-width: 72px; min-height: 58px; font-size: 1.6rem; }
 .setting button.toggle { min-width: 110px; }
 .setting button.toggle[aria-pressed="true"] { background: #12332e; border-color: var(--accent); color: var(--accent); }
 
@@ -203,3 +204,6 @@ body[data-state="running"] #cam, body[data-state="paused"] #cam, body[data-state
 }
 
 .toast { bottom: 5.5rem; }
+
+.lang-btn { position: absolute; top: 1rem; right: 1rem; min-height: 44px; padding: .4rem .9rem; font-size: .95rem; }
+.card h1 { padding-right: 9rem; }

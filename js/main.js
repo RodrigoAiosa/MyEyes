@@ -3,32 +3,24 @@ import { Calibration } from './calibration.js';
 import { DwellController } from './dwell.js';
 import { OneEuroFilter } from './filters.js';
 import { loadSettings, saveSettings } from './settings.js';
+import { t, getLang, setLang, speechLang, applyI18n, phrases, keyRows } from './i18n.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
 /* ───────────── Conteúdo ───────────── */
-const PHRASES = [
-  ['✅', 'Sim'], ['❌', 'Não'], ['🙏', 'Obrigado'], ['🤝', 'Por favor'],
-  ['💧', 'Quero água'], ['🍽', 'Estou com fome'], ['🚻', 'Preciso ir ao banheiro'], ['🤕', 'Estou com dor'],
-  ['🥶', 'Estou com frio'], ['🥵', 'Estou com calor'], ['🛏', 'Quero mudar de posição'], ['🚨', 'Preciso de ajuda!'],
-];
-const KEY_ROWS = [
-  'QWERTYUIOP'.split(''),
-  'ASDFGHJKLÇ'.split(''),
-  ['Z', 'X', 'C', 'V', 'B', 'N', 'M', ',', '.', '?'],
-];
 const SETTINGS_UI = [
-  { key: 'dwellMs', label: 'Tempo para clicar', min: 600, max: 3000, step: 200, fmt: (v) => `${(v / 1000).toFixed(1)} s` },
-  { key: 'smoothing', label: 'Suavização do cursor', min: 1, max: 5, step: 1, fmt: (v) => `${v}/5` },
-  { key: 'cursorScale', label: 'Tamanho do cursor', min: 1, max: 3, step: 0.5, fmt: (v) => `${v}×` },
-  { key: 'snapPx', label: 'Imã nos botões', min: 0, max: 120, step: 20, fmt: (v) => (v ? `${v} px` : 'off') },
+  { key: 'dwellMs', label: 'set.dwell', min: 600, max: 3000, step: 200, fmt: (v) => `${(v / 1000).toFixed(1)} s` },
+  { key: 'smoothing', label: 'set.smoothing', min: 1, max: 5, step: 1, fmt: (v) => `${v}/5` },
+  { key: 'cursorScale', label: 'set.cursor', min: 1, max: 3, step: 0.5, fmt: (v) => `${v}×` },
+  { key: 'snapPx', label: 'set.snap', min: 0, max: 120, step: 20, fmt: (v) => (v ? `${v} px` : t('val.snapoff')) },
 ];
 const TOGGLES_UI = [
-  { key: 'blinkClick', label: 'Clicar com piscada longa' },
-  { key: 'showCamera', label: 'Mostrar câmera' },
-  { key: 'sound', label: 'Som ao clicar' },
-  { key: 'autoAdjust', label: 'Autoajuste contínuo' },
+  { key: 'blinkClick', label: 'set.blink' },
+  { key: 'showCamera', label: 'set.camera' },
+  { key: 'sound', label: 'set.sound' },
+  { key: 'autoAdjust', label: 'set.auto' },
+  { key: 'fullscreen', label: 'set.fullscreen' },
 ];
 const CUTOFFS = [2.5, 1.6, 1.0, 0.6, 0.35]; // Hz mínimos do filtro, por nível de suavização
 const BLINK_ON = 0.55, BLINK_OFF = 0.35;
@@ -87,13 +79,29 @@ function speak(text) {
   if (!text || !('speechSynthesis' in window)) return;
   speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(text);
-  u.lang = 'pt-BR';
+  u.lang = speechLang();
   speechSynthesis.speak(u);
 }
 
+/**
+ * Tela cheia "sempre": o navegador só aceita o pedido após um gesto REAL do usuário
+ * (clique, toque ou tecla). Por isso pedimos no botão de início e em todo gesto real
+ * enquanto a tela cheia não estiver ativa. (Instalado como app, abre em tela cheia direto.)
+ */
 function goFullscreen() {
-  try { document.documentElement.requestFullscreen?.().catch(() => {}); } catch { /* ignora */ }
+  if (!S.settings.fullscreen || document.fullscreenElement) return;
+  try {
+    document.documentElement.requestFullscreen?.({ navigationUI: 'hide' })?.catch(() => {});
+  } catch { /* ignora */ }
 }
+for (const ev of ['pointerdown', 'touchstart', 'keydown']) {
+  window.addEventListener(ev, (e) => { if (!(e.type === 'keydown' && e.key === 'Escape')) goFullscreen(); }, true);
+}
+document.addEventListener('fullscreenchange', () => {
+  if (!document.fullscreenElement && S.settings.fullscreen && !['welcome', 'loading'].includes(S.name)) {
+    notify(t('toast.fullscreen'), 8000);
+  }
+});
 
 /* ───────────── Máquina de estados ───────────── */
 function setState(name) {
@@ -155,20 +163,25 @@ async function runCalibration() {
       console.error(e);
       setState('welcome');
       const err = $('#welcome-error');
-      err.textContent = `${e.message} Confira a iluminação e a posição e tente de novo.`;
+      err.textContent = `${e.message} ${t('calib.err.retry')}`;
       err.hidden = false;
       tracker.stop();
     }
   }
 }
 
-function showCalibrationResult({ errPx, quality }) {
-  $('#calib-quality').textContent = `Precisão estimada: ${quality.text} (erro ≈ ${Math.round(errPx)} px)`;
-  $('#calib-tip').textContent =
-    quality.level === 'baixa'
-      ? 'A precisão ficou baixa. Melhore a luz no rosto, aproxime-se da câmera e refaça. Se continuar, use botões grandes e aumente o "Imã nos botões" em Ajustes.'
-      : 'Quanto mais parada a cabeça, melhor. Se o cursor ficar deslocado, use "Recalibrar" a qualquer momento.';
+let lastResult = null;
+function showCalibrationResult(res) {
+  lastResult = res;
+  renderCalibrationResult();
   setState('result');
+}
+
+function renderCalibrationResult() {
+  if (!lastResult) return;
+  const { errPx, quality } = lastResult;
+  $('#calib-quality').textContent = t('result.quality', { q: t(`quality.${quality.level}`), err: Math.round(errPx) });
+  $('#calib-tip').textContent = t(quality.level === 'baixa' ? 'result.tip.low' : 'result.tip.ok');
 }
 
 function resetGaze() {
@@ -187,8 +200,7 @@ tracker.onFrame = (fr) => {
   frame = { ...fr, seq: ++seq };
   if (fr.found !== S.faceOk) {
     S.faceOk = fr.found;
-    els.faceStatus.dataset.ok = String(fr.found);
-    els.faceStatus.textContent = fr.found ? 'Rosto detectado' : 'Rosto não encontrado';
+    refreshFaceStatus();
   }
   if (S.model && ['result', 'running', 'paused'].includes(S.name)) processGaze(fr);
 };
@@ -246,7 +258,7 @@ function checkHeadDrift(fr, tMs) {
   S.driftSince ??= tMs;
   if (tMs - S.driftSince > 2500 && tMs - S.lastDriftNotice > 20000) {
     S.lastDriftNotice = tMs;
-    notify('Sua cabeça mudou de posição. Volte à posição da calibração ou use "Recalibrar".');
+    notify(t('toast.drift'));
   }
 }
 
@@ -258,25 +270,33 @@ function renderCursor() {
 }
 
 /* ───────────── Interface ───────────── */
+function refreshFaceStatus() {
+  if (S.faceOk === null) return;
+  els.faceStatus.dataset.ok = String(S.faceOk);
+  els.faceStatus.textContent = t(S.faceOk ? 'face.found' : 'face.lost');
+}
+
 function renderMessage() {
   const max = 38;
   els.message.textContent = S.message.length > max ? `…${S.message.slice(-max)}` : S.message;
 }
 
 function renderPhrases() {
-  $('#tab-phrases').innerHTML = PHRASES.map(
-    ([ico, text]) =>
-      `<button class="phrase" data-gaze data-action="phrase" data-text="${text}"><span class="ico">${ico}</span>${text}</button>`,
-  ).join('');
+  $('#tab-phrases').innerHTML = phrases()
+    .map(
+      ([ico, text]) =>
+        `<button class="phrase" data-gaze data-action="phrase" data-text="${text}"><span class="ico">${ico}</span>${text}</button>`,
+    )
+    .join('');
 }
 
 function renderKeyboard() {
-  const rows = KEY_ROWS.map(
+  const rows = keyRows().map(
     (row) => `<div class="kb-row">${row.map((k) => `<button data-gaze data-action="key" data-key="${k}">${k}</button>`).join('')}</div>`,
   );
   rows.push(
     `<div class="kb-row">
-      <button class="w6" data-gaze data-action="key" data-key=" ">ESPAÇO</button>
+      <button class="w6" data-gaze data-action="key" data-key=" ">${t('key.space')}</button>
       <button class="w2" data-gaze data-action="backspace">⌫</button>
       <button class="w2 accent" data-gaze data-action="speak">🔊</button>
     </div>`,
@@ -288,19 +308,34 @@ function renderSettings() {
   const steppers = SETTINGS_UI.map((d) => {
     const v = S.settings[d.key];
     return `<div class="setting" data-skey="${d.key}">
-      <span class="name">${d.label}</span>
-      <button data-gaze data-action="step" data-key="${d.key}" data-dir="-1" ${v <= d.min ? 'disabled' : ''} aria-label="Diminuir">−</button>
+      <span class="name">${t(d.label)}</span>
+      <button data-gaze data-action="step" data-key="${d.key}" data-dir="-1" ${v <= d.min ? 'disabled' : ''} aria-label="${t('aria.dec')}">−</button>
       <span class="val">${d.fmt(v)}</span>
-      <button data-gaze data-action="step" data-key="${d.key}" data-dir="1" ${v >= d.max ? 'disabled' : ''} aria-label="Aumentar">+</button>
+      <button data-gaze data-action="step" data-key="${d.key}" data-dir="1" ${v >= d.max ? 'disabled' : ''} aria-label="${t('aria.inc')}">+</button>
     </div>`;
   });
   const toggles = TOGGLES_UI.map(
     (d) => `<div class="setting" data-skey="${d.key}">
-      <span class="name">${d.label}</span>
-      <button class="toggle" data-gaze data-action="toggle" data-key="${d.key}" aria-pressed="${S.settings[d.key]}">${S.settings[d.key] ? 'Ligado' : 'Desligado'}</button>
+      <span class="name">${t(d.label)}</span>
+      <button class="toggle" data-gaze data-action="toggle" data-key="${d.key}" aria-pressed="${S.settings[d.key]}">${S.settings[d.key] ? t('val.on') : t('val.off')}</button>
     </div>`,
   );
-  $('#tab-settings').innerHTML = [...steppers, ...toggles].join('');
+  const language = `<div class="setting" data-skey="lang">
+      <span class="name">${t('set.lang')}</span>
+      <button class="toggle" data-gaze data-action="lang">${t('lang.name')}</button>
+    </div>`;
+  $('#tab-settings').innerHTML = [...steppers, ...toggles, language].join('');
+}
+
+function relabelSettings() {
+  for (const d of [...SETTINGS_UI, ...TOGGLES_UI]) {
+    $(`#tab-settings [data-skey="${d.key}"] .name`).textContent = t(d.label);
+  }
+  document.querySelectorAll('#tab-settings [data-dir="-1"]').forEach((b) => b.setAttribute('aria-label', t('aria.dec')));
+  document.querySelectorAll('#tab-settings [data-dir="1"]').forEach((b) => b.setAttribute('aria-label', t('aria.inc')));
+  $('#tab-settings [data-skey="lang"] .name').textContent = t('set.lang');
+  $('#tab-settings [data-skey="lang"] .toggle').textContent = t('lang.name');
+  updateSettingsView();
 }
 
 function updateSettingsView() {
@@ -314,7 +349,7 @@ function updateSettingsView() {
   for (const d of TOGGLES_UI) {
     const b = $(`#tab-settings [data-skey="${d.key}"] .toggle`);
     b.setAttribute('aria-pressed', String(S.settings[d.key]));
-    b.textContent = S.settings[d.key] ? 'Ligado' : 'Desligado';
+    b.textContent = S.settings[d.key] ? t('val.on') : t('val.off');
   }
 }
 
@@ -322,6 +357,24 @@ function showTab(tab) {
   S.tab = tab;
   for (const id of ['phrases', 'keyboard', 'settings']) $(`#tab-${id}`).hidden = id !== tab;
   document.querySelectorAll('.tabs [role=tab]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
+}
+
+function changeLanguage() {
+  setLang(getLang() === 'pt' ? 'en' : 'pt');
+  refreshLanguage();
+}
+
+/** Reaplica todos os textos (estáticos e gerados) no idioma atual. */
+function refreshLanguage() {
+  applyI18n();
+  renderPhrases();
+  renderKeyboard();
+  // Ajustes: atualiza no lugar (recriar trocaria o botão sob o olhar e o clique se repetiria)
+  if ($('#tab-settings').children.length) relabelSettings(); else renderSettings();
+  renderMessage();
+  refreshFaceStatus();
+  renderCalibrationResult();
+  showTab(S.tab);
 }
 
 function applySettings() {
@@ -337,6 +390,7 @@ function applySettings() {
 function changeSetting(key, value) {
   S.settings[key] = value;
   saveSettings(S.settings);
+  if (key === 'fullscreen' && value) goFullscreen();
   applySettings();
   updateSettingsView();
 }
@@ -347,6 +401,7 @@ document.addEventListener('click', (e) => {
   if (!btn) return;
   const { action, key, text, dir, tab } = btn.dataset;
   switch (action) {
+    case 'lang': changeLanguage(); break;
     case 'tab': showTab(tab); break;
     case 'phrase': S.message = text; renderMessage(); speak(text); break;
     case 'key': S.message += key.toLowerCase(); renderMessage(); break;
@@ -387,15 +442,12 @@ window.addEventListener('resize', () => {
   if (!S.model || !['running', 'paused'].includes(S.name)) return;
   calibSize ??= { w: innerWidth, h: innerHeight };
   if (Math.abs(innerWidth - calibSize.w) / calibSize.w > 0.05 || Math.abs(innerHeight - calibSize.h) / calibSize.h > 0.05) {
-    notify('O tamanho da janela mudou. Use "Recalibrar" para manter a precisão.');
+    notify(t('toast.resize'));
   }
 });
 
 /* ───────────── Inicialização ───────────── */
-renderPhrases();
-renderKeyboard();
-renderSettings();
-renderMessage();
+refreshLanguage();
 showTab('phrases');
 applySettings();
 setState('welcome');

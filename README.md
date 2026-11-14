@@ -1,10 +1,14 @@
 # 👁 MyEyes
 
+🇧🇷 Português · [🇺🇸 English](README.en.md)
+
 Mova o cursor e clique **usando apenas o movimento dos olhos**, com a webcam comum do computador. Pensado para pessoas que só conseguem mover os olhos (ELA, lesão medular, paralisia cerebral, síndrome do encarceramento, entre outras condições).
 
 - 100% no navegador — nada para instalar.
 - **Privacidade:** o vídeo é processado localmente (MediaPipe) e **nunca é enviado** a nenhum servidor.
 - Sem backend, sem build: arquivos estáticos publicados direto na Vercel.
+- **Português (Brasil) e English:** o idioma segue o do navegador e pode ser trocado em Ajustes (ou na tela inicial). Isso vale para a interface, o teclado, as frases e a **voz** (pt-BR / en-US).
+- **Tela cheia sempre:** pedida ao iniciar e a cada clique/tecla real enquanto não estiver ativa (o navegador só permite após um gesto do usuário). Dá para desligar em Ajustes. Instalado como app (veja abaixo), abre em tela cheia direto.
 
 ## Como funciona
 
@@ -38,6 +42,10 @@ npm test         # testes unitários (regressão, filtro, características, dwel
 2. **Framework Preset:** `Other`. Deixe *Build Command* e *Output Directory* vazios (o `vercel.json` já cuida dos cabeçalhos).
 3. *Deploy*. Cada `git push` na `main` publica automaticamente.
 
+## Instalar como app (abre sempre em tela cheia)
+
+No Chrome ou Edge, abra o site e use **Instalar** (ícone na barra de endereço, ou menu ⋮ → *Instalar MyEyes*). O aplicativo instalado abre **sempre em tela cheia**, sem precisar de nenhum clique para isso (`manifest.webmanifest` → `display: fullscreen`). É a melhor opção para quem usa só o olhar: um acompanhante instala uma vez.
+
 ## Limitações (leia antes de prometer o que o app não entrega)
 
 - **Só controla a página do próprio MyEyes.** Um site não pode mover o cursor do sistema operacional. Para controlar o computador inteiro seria preciso um aplicativo desktop (veja o roteiro abaixo).
@@ -54,7 +62,7 @@ npm test         # testes unitários (regressão, filtro, características, dwel
 - [ ] App desktop (Electron/Python) para controlar o cursor do sistema.
 - [ ] Predição de palavras no teclado e frases personalizáveis pelo cuidador.
 - [ ] Hospedar o modelo e o runtime no próprio projeto (funcionar offline / PWA).
-- [ ] Mais idiomas.
+- [ ] Mais idiomas (espanhol, por exemplo) — basta acrescentar o idioma em `js/i18n.js`; o teste garante que nenhuma chave fique sem tradução.
 
 ## Estrutura
 
@@ -62,6 +70,8 @@ npm test         # testes unitários (regressão, filtro, características, dwel
 index.html        telas: boas-vindas, calibração, app
 css/styles.css    tema escuro de alto contraste, alvos grandes
 js/main.js        orquestra estados, interface e pipeline do olhar
+js/i18n.js        textos em pt-BR e en, frases, teclado, idioma da voz
+manifest.webmanifest + icons/   instalação como app em tela cheia
 js/tracker.js     câmera + MediaPipe Face Landmarker
 js/features.js    landmarks → características do olhar / piscada
 js/calibration.js calibração de 13 pontos com espera de fixação
@@ -69,7 +79,7 @@ js/fixation.js    detecção de fixação / descarte de sacadas
 js/regression.js  Ridge, seleção de modelo por validação cruzada, autoajuste
 js/filters.js     filtro One Euro
 js/dwell.js       clique por permanência, imã, histerese
-tests/            testes (node --test), incluindo simulação antigo × novo
+tests/            testes (node --test): lógica, simulação antigo × novo, tradução
 vercel.json       cabeçalhos (Permissions-Policy: camera)
 ```
 
