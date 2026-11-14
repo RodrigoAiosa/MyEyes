@@ -215,9 +215,32 @@ export function fitFromGroups(groups, width, height, lambda = null) {
       return s + Math.hypot((p[0] - Y[i][0]) * width, (p[1] - Y[i][1]) * height);
     }, 0) / X.length;
 
+  // Diagnóstico: onde o modelo "acha" que o usuário olhou em cada ponto
+  const cols = FEATURE_SETS[best.set];
+  const meanPred = (mdl, xs) => {
+    const ps = xs.map((x) => mdl.predict(x));
+    return [ps.reduce((a, p) => a + p[0], 0) / ps.length, ps.reduce((a, p) => a + p[1], 0) / ps.length, ps];
+  };
+  const perPoint = groups.map((g, k) => {
+    const own = toTrainingSet([g]);
+    if (!own.X.length) return { fx: g.fx, fy: g.fy, fit: [g.fx, g.fy], cv: null, jitterPx: 0, n: 0 };
+    const [fxm, fym, ps] = meanPred(ridge, own.X);
+    const vx = ps.reduce((a, p) => a + (p[0] - fxm) ** 2, 0) / ps.length;
+    const vy = ps.reduce((a, p) => a + (p[1] - fym) ** 2, 0) / ps.length;
+    let cv = null;
+    const rest = toTrainingSet(groups.filter((_, i) => i !== k));
+    if (rest.X.length >= 20) {
+      try {
+        const [cx, cy] = meanPred(new RidgeModel(best.lambda, cols).fit(rest.X, rest.Y), own.X);
+        cv = [cx, cy];
+      } catch { /* dobra degenerada */ }
+    }
+    return { fx: g.fx, fy: g.fy, fit: [fxm, fym], cv, jitterPx: Math.sqrt(vx * width * width + vy * height * height), n: own.X.length };
+  });
+
   const hr = model.headRange;
   const headRef = { x: (hr[0].min + hr[0].max) / 2, y: (hr[1].min + hr[1].max) / 2 };
-  return { model, errPx: best.err || trainErrPx, trainErrPx, chosen: { set: best.set, lambda: best.lambda }, headRef };
+  return { model, errPx: best.err || trainErrPx, trainErrPx, chosen: { set: best.set, lambda: best.lambda }, headRef, perPoint };
 }
 
 export function qualityLabel(errPx) {

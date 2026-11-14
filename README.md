@@ -21,6 +21,15 @@ Mova o cursor e clique **usando apenas o movimento dos olhos**, com a webcam com
 7. **Clique por permanência (dwell) →** fixar o olhar num botão por ~1,2 s clica. Há *imã* nos botões próximos, tolerância a pequenos desvios e travamento até o olhar sair (evita cliques repetidos) (`js/dwell.js`).
 8. **Opcional: clique por piscada longa** (~0,6–1,8 s). Piscadas curtas naturais são ignoradas e o cursor fica congelado durante a piscada.
 
+### Modo diagnóstico 📊
+
+Botão **Diagnóstico** (na tela de resultado da calibração e na barra do app). Mostra, num mapa da tela, o **ponto real** (círculo) contra **onde o app acha que você olhou** (ponto colorido, ligado por uma linha — verde < 100 px, amarelo < 200 px, vermelho acima), com o erro de cada ponto. Também calcula:
+
+- erro **horizontal × vertical**, **desvio sistemático** (para onde o cursor tende a cair), **tremor** entre quadros, erro no **centro × bordas** e o **pior ponto**;
+- recomendações específicas para o que foi detectado (câmera, luz, posição, suavização, tamanho dos botões).
+
+Dois modos: **calibração** (cada ponto previsto por um modelo treinado *sem* ele — validação cruzada, conservadora) e **🎯 Teste de precisão**: 8 pontos *novos*, fora da calibração, que é a medida mais realista. Se quiser, **➕ Usar estes pontos para melhorar** junta os 8 pontos aos 13 e reajusta o modelo (uma "segunda rodada").
+
 ### O que já vem no app
 - 💬 **Frases rápidas** com voz (síntese de fala em pt-BR) — "Sim", "Não", "Preciso de ajuda!"…
 - ⌨ **Teclado** na tela com teclas grandes e botão de falar.
@@ -77,6 +86,8 @@ js/features.js    landmarks → características do olhar / piscada
 js/calibration.js calibração de 13 pontos com espera de fixação
 js/fixation.js    detecção de fixação / descarte de sacadas
 js/regression.js  Ridge, seleção de modelo por validação cruzada, autoajuste
+js/diagnostics.js estatísticas e regras do diagnóstico (puro, testado)
+js/diag-ui.js     mapa SVG, métricas e recomendações do diagnóstico
 js/filters.js     filtro One Euro
 js/dwell.js       clique por permanência, imã, histerese
 tests/            testes (node --test): lógica, simulação antigo × novo, tradução

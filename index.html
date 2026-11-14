@@ -58,6 +58,7 @@
       <div class="row">
         <button class="big primary" data-gaze data-action="calib-accept" data-i18n="result.continue"></button>
         <button class="big" data-gaze data-action="calib-retry" data-i18n="result.retry"></button>
+        <button class="big" data-gaze data-action="diag-open" data-i18n="btn.diag"></button>
       </div>
     </div>
   </section>
@@ -68,6 +69,7 @@
       <div class="brand"><span aria-hidden="true">👁</span> MyEyes</div>
       <div id="face-status" class="badge" data-ok="false" role="status" data-i18n="face.searching"></div>
       <div class="spacer"></div>
+      <button data-gaze data-action="diag-open" data-i18n="btn.diag"></button>
       <button data-gaze data-action="pause" data-i18n="btn.pause"></button>
       <button data-gaze data-action="recalibrate" data-i18n="btn.recalibrate"></button>
     </header>
@@ -99,6 +101,34 @@
       <button class="big primary" data-gaze data-resume data-action="resume" data-i18n="btn.resume"></button>
     </div>
   </div>
+
+  <!-- Diagnóstico / Diagnostics -->
+  <section id="diag" class="screen overlay diag" hidden>
+    <div class="diag-card">
+      <header class="diag-head">
+        <h2 data-i18n="diag.title"></h2>
+        <span id="diag-kind" class="badge" data-ok="true"></span>
+      </header>
+      <div class="diag-body">
+        <div class="diag-left">
+          <div id="diag-map" class="diag-map" role="img"></div>
+          <p class="legend"><span class="lg lg-target"></span> <span data-i18n="diag.legend.target"></span> &nbsp; <span class="lg lg-pred"></span> <span data-i18n="diag.legend.pred"></span></p>
+          <p id="diag-hint" class="small"></p>
+        </div>
+        <div class="diag-right">
+          <dl id="diag-metrics" class="metrics"></dl>
+          <h3 data-i18n="diag.findings"></h3>
+          <ul id="diag-findings" class="findings"></ul>
+        </div>
+      </div>
+      <div class="diag-actions">
+        <button class="big primary" data-gaze data-action="diag-close" data-i18n="diag.btn.back"></button>
+        <button class="big" data-gaze data-action="diag-test" data-i18n="diag.btn.test"></button>
+        <button id="diag-switch" class="big" data-gaze data-action="diag-switch" hidden></button>
+        <button id="diag-improve" class="big accent" data-gaze data-action="diag-improve" data-i18n="diag.btn.improve" hidden></button>
+      </div>
+    </div>
+  </section>
 
   <div id="toast" class="toast" role="status" hidden></div>
 

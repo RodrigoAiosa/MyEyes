@@ -21,6 +21,15 @@ Move the cursor and click **using only eye movement**, with an ordinary webcam. 
 7. **Dwell click:** holding your gaze on a button for ~1.2 s clicks it. There is a *magnet* for nearby buttons, tolerance for small slips, and a lock until the gaze leaves (prevents repeated clicks) (`js/dwell.js`).
 8. **Optional: long-blink click** (~0.6–1.8 s). Short natural blinks are ignored and the cursor freezes during a blink.
 
+### Diagnostics mode 📊
+
+**Diagnostics** button (on the calibration result screen and in the app's top bar). It shows, on a map of the screen, the **real point** (circle) against **where the app thinks you looked** (colored dot joined by a line — green < 100 px, amber < 200 px, red above), with each point's error. It also computes:
+
+- **horizontal × vertical** error, **systematic offset** (where the cursor tends to land), frame-to-frame **jitter**, **center × edges** error and the **worst point**;
+- specific recommendations for what was detected (camera, light, position, smoothing, button size).
+
+Two views: **calibration** (each point predicted by a model trained *without* it — cross-validation, conservative) and **🎯 Accuracy test**: 8 *new* points outside the calibration, the most realistic measure. Optionally, **➕ Use these points to improve** merges the 8 points with the 13 and refits the model (a "second round").
+
 ### What's in the app
 - 💬 **Quick phrases** with speech ("Yes", "No", "I need help!"…).
 - ⌨ **On-screen keyboard** with large keys and a speak button.
@@ -76,6 +85,8 @@ js/features.js    landmarks → gaze features / blink
 js/calibration.js 13-point calibration with fixation wait
 js/fixation.js    fixation detection / saccade dropping
 js/regression.js  ridge, cross-validated model selection, auto-adjust
+js/diagnostics.js diagnostics statistics and rules (pure, tested)
+js/diag-ui.js     SVG map, metrics and recommendations
 js/filters.js     One Euro filter
 js/dwell.js       dwell click, magnet, hysteresis
 manifest.webmanifest + icons/   install as a fullscreen app

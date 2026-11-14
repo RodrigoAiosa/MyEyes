@@ -1,5 +1,8 @@
 import { EyeTracker, describeError } from './tracker.js';
-import { Calibration } from './calibration.js';
+import { Calibration, TEST_POINTS } from './calibration.js';
+import { fitFromGroups, qualityLabel } from './regression.js';
+import { toPoints, evaluateGroups, summarize, diagnose } from './diagnostics.js';
+import { renderDiagnostic } from './diag-ui.js';
 import { DwellController } from './dwell.js';
 import { OneEuroFilter } from './filters.js';
 import { loadSettings, saveSettings } from './settings.js';
@@ -31,12 +34,13 @@ const CIRC = 2 * Math.PI * 26;
 const els = {
   video: $('#cam'), cursor: $('#gaze-cursor'), ring: $('#cursor-progress'),
   welcome: $('#welcome'), loading: $('#loading'), calib: $('#calib'), app: $('#app'), paused: $('#paused'),
-  calibResult: $('#calib-result'), message: $('#message'), faceStatus: $('#face-status'), faceWarning: $('#face-warning'),
+  diag: $('#diag'), calibResult: $('#calib-result'), message: $('#message'), faceStatus: $('#face-status'), faceWarning: $('#face-warning'),
 };
 const S = {
   name: 'welcome', model: null, settings: loadSettings(), message: '', tab: 'phrases',
   gaze: { x: innerWidth / 2, y: innerHeight / 2 },
   lastFaceMs: 0, blinking: false, blinkStart: null, blinkEndMs: 0, faceOk: null,
+  prev: 'running', diagKind: 'calib', testGroups: null, testPoints: null,
   featBuf: [], rawX: [], rawY: [], headRef: null, driftSince: null, lastDriftNotice: -1e9,
 };
 let frame = null, seq = 0, abort = null;
@@ -107,22 +111,29 @@ document.addEventListener('fullscreenchange', () => {
 function setState(name) {
   S.name = name;
   document.body.dataset.state = name;
-  els.welcome.hidden = name !== 'welcome';
-  els.loading.hidden = name !== 'loading';
-  els.calib.hidden = !['calibrating', 'result'].includes(name);
-  els.calibResult.hidden = name !== 'result';
-  els.app.hidden = !['running', 'paused'].includes(name);
-  els.paused.hidden = name !== 'paused';
-  els.cursor.hidden = !['result', 'running', 'paused'].includes(name);
+  // o diagnóstico é uma camada sobre a tela de origem (resultado ou app)
+  const base = name === 'diagnostic' ? S.prev : name;
+  els.welcome.hidden = base !== 'welcome';
+  els.loading.hidden = base !== 'loading';
+  els.calib.hidden = !['calibrating', 'result'].includes(base);
+  els.calibResult.hidden = base !== 'result';
+  els.app.hidden = !['running', 'paused'].includes(base);
+  els.paused.hidden = base !== 'paused';
+  els.diag.hidden = name !== 'diagnostic';
+  els.cursor.hidden = !['result', 'running', 'paused', 'diagnostic'].includes(name);
 
-  const scopes = { result: els.calibResult, running: els.app, paused: els.paused };
+  const scopes = { result: els.calibResult, running: els.app, paused: els.paused, diagnostic: els.diag };
   dwell.setScope(scopes[name] ?? null);
   dwell.setEnabled(name in scopes);
-  if (name === 'calibrating') {
+  if (base === 'calibrating') {
     $('#calib-dot').hidden = false;
     els.calibResult.hidden = true;
   }
-  if (name === 'result') $('#calib-dot').hidden = true;
+  if (base === 'result') $('#calib-dot').hidden = true;
+  if (['result', 'diagnostic'].includes(name)) {
+    $('#calib-label').textContent = '';
+    $('#calib-hint').textContent = '';
+  }
 }
 
 async function start() {
@@ -153,6 +164,10 @@ async function runCalibration() {
     const res = await calibration.run(abort.signal);
     S.model = res.model;
     S.headRef = res.headRef;
+    res.size = { W: innerWidth, H: innerHeight };
+    S.testGroups = null;
+    S.testPoints = null;
+    S.diagKind = 'calib';
     applySettings();
     resetGaze();
     showCalibrationResult(res);
@@ -184,6 +199,68 @@ function renderCalibrationResult() {
   $('#calib-tip').textContent = t(quality.level === 'baixa' ? 'result.tip.low' : 'result.tip.ok');
 }
 
+/* ───────────── Diagnóstico ───────────── */
+function renderDiag() {
+  if (!lastResult) return;
+  const { W, H } = lastResult.size;
+  const kind = S.diagKind === 'test' && S.testPoints ? 'test' : 'calib';
+  const points = kind === 'test' ? S.testPoints : toPoints(lastResult.perPoint, 'cv');
+  const summary = summarize(points, W, H);
+  renderDiagnostic({ summary, findings: diagnose(summary), kind, W, H, hasTest: !!S.testPoints });
+}
+
+function openDiagnostic() {
+  if (!lastResult || !['running', 'result'].includes(S.name)) return;
+  S.prev = S.name;
+  setState('diagnostic');
+  renderDiag();
+}
+
+/** Teste de precisão: 8 pontos NOVOS (fora do treino) medidos com o modelo atual. */
+async function runAccuracyTest() {
+  const back = S.prev;
+  setState('calibrating');
+  abort = new AbortController();
+  try {
+    await new Promise((r) => setTimeout(r, 400));
+    const { W, H } = lastResult.size;
+    S.testGroups = await calibration.collectGroups(abort.signal, TEST_POINTS, 'test.point');
+    S.testPoints = evaluateGroups(S.testGroups, (f) => S.model.predict(f), W, H);
+    S.diagKind = 'test';
+  } catch (e) {
+    if (e.name !== 'AbortError') {
+      console.error(e);
+      notify(`${e.message} ${t('calib.err.retry')}`, 8000);
+    }
+  }
+  resetGaze();
+  S.prev = back;
+  setState('diagnostic');
+  renderDiag();
+}
+
+/** Junta os pontos do teste à calibração e reajusta o modelo (a "segunda rodada"). */
+function improveWithTest() {
+  if (!S.testGroups || !lastResult) return;
+  try {
+    const { W, H } = lastResult.size;
+    const groups = [...lastResult.groups, ...S.testGroups];
+    const fit = fitFromGroups(groups, W, H);
+    S.model = fit.model;
+    S.headRef = fit.headRef;
+    lastResult = { ...fit, groups, quality: qualityLabel(fit.errPx), size: { W, H } };
+    S.testGroups = null;
+    S.testPoints = null;
+    S.diagKind = 'calib';
+    resetGaze();
+    renderCalibrationResult();
+    renderDiag();
+    notify(t('toast.improved'));
+  } catch (e) {
+    console.error(e);
+  }
+}
+
 function resetGaze() {
   fx = new OneEuroFilter({ minCutoff: CUTOFFS[S.settings.smoothing - 1], beta: 0.01 });
   fy = new OneEuroFilter({ minCutoff: CUTOFFS[S.settings.smoothing - 1], beta: 0.01 });
@@ -202,7 +279,7 @@ tracker.onFrame = (fr) => {
     S.faceOk = fr.found;
     refreshFaceStatus();
   }
-  if (S.model && ['result', 'running', 'paused'].includes(S.name)) processGaze(fr);
+  if (S.model && ['result', 'running', 'paused', 'diagnostic'].includes(S.name)) processGaze(fr);
 };
 
 function processGaze(fr) {
@@ -374,6 +451,7 @@ function refreshLanguage() {
   renderMessage();
   refreshFaceStatus();
   renderCalibrationResult();
+  if (S.name === 'diagnostic') renderDiag();
   showTab(S.tab);
 }
 
@@ -418,6 +496,11 @@ document.addEventListener('click', (e) => {
     case 'pause': setState('paused'); break;
     case 'resume': setState('running'); break;
     case 'recalibrate': goFullscreen(); runCalibration(); break;
+    case 'diag-open': openDiagnostic(); break;
+    case 'diag-close': setState(S.prev); break;
+    case 'diag-switch': S.diagKind = S.diagKind === 'test' ? 'calib' : 'test'; renderDiag(); break;
+    case 'diag-test': runAccuracyTest(); break;
+    case 'diag-improve': improveWithTest(); break;
     case 'calib-accept': calibSize = { w: innerWidth, h: innerHeight }; setState('running'); break;
     case 'calib-retry': runCalibration(); break;
   }

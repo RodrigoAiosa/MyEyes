@@ -12,6 +12,11 @@ export const CALIB_POINTS = [
   [0.71, 0.7], [0.29, 0.7],
   [0.92, 0.9], [0.5, 0.9], [0.08, 0.9],
 ];
+// Pontos do teste de precisão: posições DIFERENTES das da calibração (não entram no treino).
+export const TEST_POINTS = [
+  [0.2, 0.2], [0.65, 0.18], [0.85, 0.4], [0.35, 0.4],
+  [0.15, 0.65], [0.6, 0.6], [0.85, 0.8], [0.4, 0.85],
+];
 const MIN_SETTLE_MS = 450;   // mínimo antes de procurar a fixação
 const MAX_FIXATION_WAIT_MS = 2500; // se o olhar nunca estabilizar, segue assim mesmo
 const FIX_WINDOW = 6;        // quadros consecutivos estáveis = fixação
@@ -34,12 +39,13 @@ export class Calibration {
     this.ui = ui;
   }
 
-  async run(signal) {
+  /** Coleta amostras para uma lista de pontos [fx, fy] (usado na calibração e no teste de precisão). */
+  async collectGroups(signal, points = CALIB_POINTS, labelKey = 'calib.point') {
     const { dot, label } = this.ui;
     const groups = [];
-    for (let i = 0; i < CALIB_POINTS.length; i++) {
-      const [fx, fy] = CALIB_POINTS[i];
-      label.textContent = t('calib.point', { n: i + 1, total: CALIB_POINTS.length });
+    for (let i = 0; i < points.length; i++) {
+      const [fx, fy] = points[i];
+      label.textContent = t(labelKey, { n: i + 1, total: points.length });
       dot.style.left = `${fx * 100}%`;
       dot.style.top = `${fy * 100}%`;
       dot.classList.remove('pulse');
@@ -51,9 +57,14 @@ export class Calibration {
       groups.push({ fx, fy, samples });
     }
     dot.classList.remove('pulse');
+    return groups;
+  }
+
+  async run(signal) {
+    const groups = await this.collectGroups(signal);
     const { innerWidth: W, innerHeight: H } = window;
     const fit = fitFromGroups(groups, W, H);
-    return { ...fit, quality: qualityLabel(fit.errPx) };
+    return { ...fit, groups, quality: qualityLabel(fit.errPx) };
   }
 
   /** Espera o olhar parar de se mover (sacada terminou) — ou desiste após um tempo máximo. */

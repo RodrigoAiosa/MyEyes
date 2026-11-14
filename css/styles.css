@@ -207,3 +207,28 @@ body[data-state="running"] #cam, body[data-state="paused"] #cam, body[data-state
 
 .lang-btn { position: absolute; top: 1rem; right: 1rem; min-height: 44px; padding: .4rem .9rem; font-size: .95rem; }
 .card h1 { padding-right: 9rem; }
+
+/* Diagnóstico */
+.diag { z-index: 55; padding: 1rem; }
+.diag-card { width: min(1240px, 100%); max-height: 100%; background: var(--panel); border-radius: 24px; padding: 1.2rem 1.6rem; display: flex; flex-direction: column; gap: .8rem; overflow: auto; }
+.diag-head { display: flex; align-items: center; gap: 1rem; }
+.diag-head h2 { margin: 0; font-size: 1.8rem; }
+.diag-body { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 1.4rem; align-items: start; }
+.diag-map { width: 100%; background: #0b1020; border-radius: 14px; border: 2px solid var(--panel-2); line-height: 0; }
+.diag-map svg { width: 100%; height: auto; display: block; }
+.legend { margin: .4rem 0 0; font-size: .95rem; color: var(--muted); }
+.lg { display: inline-block; width: 14px; height: 14px; border-radius: 50%; vertical-align: -2px; }
+.lg-target { border: 3px solid #f5f7ff; }
+.lg-pred { background: var(--accent); }
+.metrics { display: grid; grid-template-columns: 1fr auto; gap: .25rem 1rem; margin: 0; font-size: 1.05rem; }
+.metrics dt { color: var(--muted); }
+.metrics dd { margin: 0; font-weight: 700; text-align: right; }
+.diag-right h3 { margin: .9rem 0 .3rem; font-size: 1.1rem; }
+.findings { margin: 0; padding-left: 1.2rem; font-size: 1rem; line-height: 1.4; }
+.findings li { margin: .35rem 0; }
+.diag-actions { display: flex; gap: .8rem; flex-wrap: wrap; }
+.diag-actions .big { min-height: 70px; font-size: 1.2rem; padding: .6rem 1.2rem; }
+.badge[data-ok="warn"] { background: #3a2a10; color: var(--warn); }
+@media (max-width: 900px) { .diag-body { grid-template-columns: 1fr; } }
+
+body[data-state="result"] .calib-esc, body[data-state="diagnostic"] .calib-esc { display: none; }
