@@ -26,11 +26,17 @@ export function solveLinear(A, b) {
 
 export class RidgeModel {
   /** @param {number} lambda regularização (proporcional ao nº de amostras) */
-  constructor(lambda = 0.05) {
+  constructor(lambda = 0.05, cols = null) {
     this.lambda = lambda;
+    this.cols = cols; // subconjunto de colunas usadas (null = todas)
+  }
+
+  _sel(x) {
+    return this.cols ? this.cols.map((c) => x[c]) : x;
   }
 
   fit(X, Y) {
+    X = X.map((x) => this._sel(x));
     const n = X.length, d = X[0].length, m = Y[0].length;
     this.mean = new Array(d).fill(0);
     this.std = new Array(d).fill(0);
@@ -55,6 +61,7 @@ export class RidgeModel {
   }
 
   predict(x) {
+    x = this._sel(x);
     const z = [1, ...x.map((v, j) => (v - this.mean[j]) / this.std[j])];
     return this.W.map((w) => w.reduce((s, wi, i) => s + wi * z[i], 0));
   }
@@ -89,37 +96,128 @@ function toTrainingSet(groups) {
   return { X, Y };
 }
 
-/**
- * Ajusta o modelo a partir dos pontos de calibração e estima a precisão por
- * validação cruzada "deixe um ponto de fora" (conservadora: os cantos são extrapolados).
- * @param {{fx:number, fy:number, samples:number[][]}[]} groups  fx/fy em [0,1]
- * @returns {{model: RidgeModel, errPx: number, trainErrPx: number}}
- */
-export function fitFromGroups(groups, width, height, lambda = 0.05) {
-  const { X, Y } = toTrainingSet(groups);
-  if (X.length < 20) throw new Error('Poucas amostras para calibrar');
-  const model = new RidgeModel(lambda).fit(X, Y);
+// Colunas do vetor expandido: 0-3 íris, 4-5 nariz, 6-7 yaw/pitch, 8-10 termos quadráticos.
+const FEATURE_SETS = {
+  completo: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+  'sem-angulos': [0, 1, 2, 3, 4, 5, 8, 9, 10],
+  'só-olhos': [0, 1, 2, 3, 8, 9, 10],
+  'só-olhos-linear': [0, 1, 2, 3],
+};
+const LAMBDAS = [0.005, 0.02, 0.08, 0.3, 1];
 
+/**
+ * Modelo final: Ridge + limites das características da cabeça (evita extrapolar se a
+ * pessoa se mexer) + correção de viés online (autoajuste a cada clique confirmado).
+ */
+export class GazeModel {
+  constructor(ridge, headRange, info = {}) {
+    this.ridge = ridge;
+    this.headRange = headRange; // [{min,max}] para nariz x, y, yaw, pitch
+    this.bias = [0, 0];
+    this.info = info;
+  }
+
+  _clampHead(f) {
+    const g = f.slice();
+    for (let i = 0; i < 4; i++) {
+      const { min, max } = this.headRange[i];
+      const m = (max - min) * 0.5 + 1e-3;
+      g[4 + i] = Math.min(max + m, Math.max(min - m, g[4 + i]));
+    }
+    return g;
+  }
+
+  predictRaw(f) {
+    return this.ridge.predict(expandFeatures(this._clampHead(f)));
+  }
+
+  /** @param {number[]} f características base (8) → [x, y] normalizados na tela */
+  predict(f) {
+    const p = this.predictRaw(f);
+    return [p[0] + this.bias[0], p[1] + this.bias[1]];
+  }
+
+  /**
+   * O usuário confirmou (clicou) que estava olhando para (tx, ty): aproxima o viés
+   * dessa diferença. Ignora diferenças absurdas (clique acidental) e limita a correção.
+   */
+  adapt(f, tx, ty, rate = 0.12, maxJump = 0.2, maxBias = 0.15) {
+    const p = this.predictRaw(f);
+    const dx = tx - p[0] - this.bias[0];
+    const dy = ty - p[1] - this.bias[1];
+    if (Math.hypot(dx, dy) > maxJump) return false;
+    const c = (v) => Math.max(-maxBias, Math.min(maxBias, v));
+    this.bias[0] = c(this.bias[0] + rate * dx);
+    this.bias[1] = c(this.bias[1] + rate * dy);
+    return true;
+  }
+}
+
+function headRangeOf(groups) {
+  const r = [0, 1, 2, 3].map(() => ({ min: Infinity, max: -Infinity }));
+  for (const g of groups) {
+    for (const f of g.samples) {
+      for (let i = 0; i < 4; i++) {
+        const v = f[4 + i];
+        if (v < r[i].min) r[i].min = v;
+        if (v > r[i].max) r[i].max = v;
+      }
+    }
+  }
+  return r;
+}
+
+function cvError(groups, lambda, cols, width, height) {
   const err = (mdl, xs, ys) =>
     xs.reduce((s, x, i) => {
       const p = mdl.predict(x);
       return s + Math.hypot((p[0] - ys[i][0]) * width, (p[1] - ys[i][1]) * height);
     }, 0) / xs.length;
-
-  const trainErrPx = err(model, X, Y);
-
   const cv = [];
   for (let k = 0; k < groups.length; k++) {
     const rest = toTrainingSet(groups.filter((_, i) => i !== k));
     const held = toTrainingSet([groups[k]]);
     if (rest.X.length < 20 || !held.X.length) continue;
     try {
-      cv.push(err(new RidgeModel(lambda).fit(rest.X, rest.Y), held.X, held.Y));
+      cv.push(err(new RidgeModel(lambda, cols).fit(rest.X, rest.Y), held.X, held.Y));
     } catch {
-      /* ignora dobra degenerada */
+      /* dobra degenerada */
     }
   }
-  return { model, errPx: cv.length ? median(cv) : trainErrPx, trainErrPx };
+  return cv.length ? median(cv) : Infinity;
+}
+
+/**
+ * Ajusta o modelo, escolhendo o melhor conjunto de características e regularização por
+ * validação cruzada "deixe um ponto de fora" (conservadora: pontos de borda são extrapolados).
+ * @param {{fx:number, fy:number, samples:number[][]}[]} groups  fx/fy em [0,1]
+ * @returns {{model: GazeModel, errPx: number, trainErrPx: number, chosen: {set: string, lambda: number}, headRef: {x:number,y:number}}}
+ */
+export function fitFromGroups(groups, width, height, lambda = null) {
+  const { X, Y } = toTrainingSet(groups);
+  if (X.length < 20) throw new Error('Poucas amostras para calibrar');
+
+  const lambdas = lambda == null ? LAMBDAS : [lambda];
+  let best = { err: Infinity, set: 'completo', lambda: lambdas[0] };
+  for (const [set, cols] of Object.entries(FEATURE_SETS)) {
+    for (const l of lambdas) {
+      const e = cvError(groups, l, cols, width, height);
+      if (e < best.err) best = { err: e, set, lambda: l };
+    }
+  }
+  if (!Number.isFinite(best.err)) best.err = 0;
+
+  const ridge = new RidgeModel(best.lambda, FEATURE_SETS[best.set]).fit(X, Y);
+  const model = new GazeModel(ridge, headRangeOf(groups), { set: best.set, lambda: best.lambda });
+  const trainErrPx =
+    X.reduce((s, x, i) => {
+      const p = ridge.predict(x);
+      return s + Math.hypot((p[0] - Y[i][0]) * width, (p[1] - Y[i][1]) * height);
+    }, 0) / X.length;
+
+  const hr = model.headRange;
+  const headRef = { x: (hr[0].min + hr[0].max) / 2, y: (hr[1].min + hr[1].max) / 2 };
+  return { model, errPx: best.err || trainErrPx, trainErrPx, chosen: { set: best.set, lambda: best.lambda }, headRef };
 }
 
 export function qualityLabel(errPx) {

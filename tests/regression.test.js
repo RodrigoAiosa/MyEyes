@@ -47,10 +47,11 @@ test('fitFromGroups: calibração sintética 3x3 com ruído tem erro baixo', () 
       return [h, v, h * 1.02, v * 0.98, 0.5 + (r() - 0.5) * 0.01, 0.5 + (r() - 0.5) * 0.01, 0.01 * r(), 0.01 * r()];
     }),
   }));
-  const { model, errPx, trainErrPx } = fitFromGroups(groups, W, H);
+  const { model, errPx, trainErrPx, chosen } = fitFromGroups(groups, W, H);
+  assert.ok(chosen.set && chosen.lambda > 0);
   assert.ok(trainErrPx < 60, `trainErrPx=${trainErrPx}`);
   assert.ok(Number.isFinite(errPx));
-  const center = model.predict([0, 0, 0, 0, 0.5, 0.5, 0.005, 0.005, 0, 0, 0]);
+  const center = model.predict([0, 0, 0, 0, 0.5, 0.5, 0.005, 0.005]);
   assert.ok(Math.abs(center[0] - 0.5) < 0.05 && Math.abs(center[1] - 0.5) < 0.05);
 });
 

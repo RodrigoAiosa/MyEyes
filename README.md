@@ -10,10 +10,12 @@ Mova o cursor e clique **usando apenas o movimento dos olhos**, com a webcam com
 
 1. **Câmera →** o [MediaPipe Face Landmarker](https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker) encontra 478 pontos do rosto, incluindo as **íris**.
 2. **Características do olhar →** posição da íris em relação aos cantos de cada olho (invariante à inclinação da cabeça) + posição e ângulos da cabeça (`js/features.js`).
-3. **Calibração de 9 pontos →** o usuário só *olha* para cada círculo. Uma regressão Ridge aprende o mapa "olhar → posição na tela" (`js/regression.js`). A precisão é estimada por validação cruzada e mostrada ao final.
-4. **Suavização →** filtro One Euro: remove o tremor sem criar atraso em movimentos rápidos (`js/filters.js`).
-5. **Clique por permanência (dwell) →** fixar o olhar num botão por ~1,2 s clica. Há *imã* nos botões próximos, tolerância a pequenos desvios e travamento até o olhar sair (evita cliques repetidos) (`js/dwell.js`).
-6. **Opcional: clique por piscada longa** (~0,6–1,8 s). Piscadas curtas naturais são ignoradas e o cursor fica congelado durante a piscada.
+3. **Calibração de 13 pontos →** o usuário só *olha* para cada círculo (~25 s). O app espera o olhar *fixar* de verdade antes de coletar (`js/fixation.js`), descarta quadros de sacada/piscada e aprende o mapa "olhar → posição na tela" com regressão Ridge. Ele **testa vários modelos** (com/sem ângulos da cabeça, 5 níveis de regularização) e fica com o de menor erro por validação cruzada "deixe um ponto de fora" (`js/regression.js`). A precisão estimada é mostrada ao final.
+4. **Suavização →** mediana de 3 quadros (elimina saltos isolados) + filtro One Euro, que remove o tremor sem criar atraso em movimentos rápidos (`js/filters.js`).
+5. **Autoajuste contínuo →** cada clique confirmado indica onde o usuário *estava* olhando; o app corrige aos poucos o desvio sistemático (cansaço, mudança de postura), com limites para um clique acidental não bagunçar o modelo. Pode ser desligado em Ajustes.
+6. **Proteção contra a cabeça:** as características da cabeça são limitadas à faixa vista na calibração, e um aviso aparece se a cabeça se afastar muito da posição calibrada.
+7. **Clique por permanência (dwell) →** fixar o olhar num botão por ~1,2 s clica. Há *imã* nos botões próximos, tolerância a pequenos desvios e travamento até o olhar sair (evita cliques repetidos) (`js/dwell.js`).
+8. **Opcional: clique por piscada longa** (~0,6–1,8 s). Piscadas curtas naturais são ignoradas e o cursor fica congelado durante a piscada.
 
 ### O que já vem no app
 - 💬 **Frases rápidas** com voz (síntese de fala em pt-BR) — "Sim", "Não", "Preciso de ajuda!"…
@@ -50,7 +52,6 @@ npm test         # testes unitários (regressão, filtro, características, dwel
 
 - [ ] Extensão de navegador para clicar em **qualquer site** (reaproveita este núcleo).
 - [ ] App desktop (Electron/Python) para controlar o cursor do sistema.
-- [ ] Calibração contínua: cada clique confirmado refina o modelo.
 - [ ] Predição de palavras no teclado e frases personalizáveis pelo cuidador.
 - [ ] Hospedar o modelo e o runtime no próprio projeto (funcionar offline / PWA).
 - [ ] Mais idiomas.
@@ -63,11 +64,12 @@ css/styles.css    tema escuro de alto contraste, alvos grandes
 js/main.js        orquestra estados, interface e pipeline do olhar
 js/tracker.js     câmera + MediaPipe Face Landmarker
 js/features.js    landmarks → características do olhar / piscada
-js/calibration.js calibração de 9 pontos
-js/regression.js  regressão Ridge + validação cruzada
+js/calibration.js calibração de 13 pontos com espera de fixação
+js/fixation.js    detecção de fixação / descarte de sacadas
+js/regression.js  Ridge, seleção de modelo por validação cruzada, autoajuste
 js/filters.js     filtro One Euro
 js/dwell.js       clique por permanência, imã, histerese
-tests/            testes (node --test)
+tests/            testes (node --test), incluindo simulação antigo × novo
 vercel.json       cabeçalhos (Permissions-Policy: camera)
 ```
 

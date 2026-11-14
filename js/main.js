@@ -2,7 +2,6 @@ import { EyeTracker, describeError } from './tracker.js';
 import { Calibration } from './calibration.js';
 import { DwellController } from './dwell.js';
 import { OneEuroFilter } from './filters.js';
-import { expandFeatures } from './features.js';
 import { loadSettings, saveSettings } from './settings.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -29,6 +28,7 @@ const TOGGLES_UI = [
   { key: 'blinkClick', label: 'Clicar com piscada longa' },
   { key: 'showCamera', label: 'Mostrar câmera' },
   { key: 'sound', label: 'Som ao clicar' },
+  { key: 'autoAdjust', label: 'Autoajuste contínuo' },
 ];
 const CUTOFFS = [2.5, 1.6, 1.0, 0.6, 0.35]; // Hz mínimos do filtro, por nível de suavização
 const BLINK_ON = 0.55, BLINK_OFF = 0.35;
@@ -45,6 +45,7 @@ const S = {
   name: 'welcome', model: null, settings: loadSettings(), message: '', tab: 'phrases',
   gaze: { x: innerWidth / 2, y: innerHeight / 2 },
   lastFaceMs: 0, blinking: false, blinkStart: null, blinkEndMs: 0, faceOk: null,
+  featBuf: [], rawX: [], rawY: [], headRef: null, driftSince: null, lastDriftNotice: -1e9,
 };
 let frame = null, seq = 0, abort = null;
 let fx = new OneEuroFilter(), fy = new OneEuroFilter();
@@ -54,7 +55,18 @@ const calibration = new Calibration({
   root: els.calib, dot: $('#calib-dot'), label: $('#calib-label'), hint: $('#calib-hint'),
   getFrame: () => frame,
 });
-const dwell = new DwellController({ onFire: () => S.settings.sound && tick() });
+const dwell = new DwellController({ onFire: onDwellFire });
+
+/** Clique confirmado: o usuário estava olhando para o centro deste alvo → corrige o desvio aos poucos. */
+function onDwellFire(el) {
+  if (S.settings.sound) tick();
+  if (!S.settings.autoAdjust || !S.model || S.name !== 'running' || S.featBuf.length < 4) return;
+  const r = el.getBoundingClientRect();
+  const f = S.featBuf[0].map((_, j) => S.featBuf.reduce((a, v) => a + v[j], 0) / S.featBuf.length);
+  const size = Math.max(r.width, r.height);
+  const rate = 0.12 * Math.min(1, 200 / size); // alvos grandes: o centro é um rótulo menos confiável
+  S.model.adapt(f, (r.left + r.width / 2) / innerWidth, (r.top + r.height / 2) / innerHeight, rate);
+}
 
 /* ───────────── Utilidades ───────────── */
 let audioCtx = null;
@@ -132,6 +144,7 @@ async function runCalibration() {
     await new Promise((r) => setTimeout(r, 400));
     const res = await calibration.run(abort.signal);
     S.model = res.model;
+    S.headRef = res.headRef;
     applySettings();
     resetGaze();
     showCalibrationResult(res);
@@ -163,6 +176,10 @@ function resetGaze() {
   fy = new OneEuroFilter({ minCutoff: CUTOFFS[S.settings.smoothing - 1], beta: 0.01 });
   S.blinking = false;
   S.blinkStart = null;
+  S.featBuf = [];
+  S.rawX = [];
+  S.rawY = [];
+  S.driftSince = null;
 }
 
 /* ───────────── Pipeline do olhar ───────────── */
@@ -200,18 +217,37 @@ function processGaze(fr) {
     if (S.settings.blinkClick && dur >= BLINK_MIN_MS && dur <= BLINK_MAX_MS) dwell.clickNow();
   }
 
+  checkHeadDrift(fr, tMs);
   const settling = tMs - S.blinkEndMs < BLINK_SETTLE_MS;
   if (S.blinking || settling) {
     dwell.hold(tMs);
   } else {
-    const p = S.model.predict(expandFeatures(fr.features));
+    const p = S.model.predict(fr.features);
     const px = clamp(p[0], -0.05, 1.05) * innerWidth;
     const py = clamp(p[1], -0.05, 1.05) * innerHeight;
-    S.gaze.x = fx.filter(px, fr.t);
-    S.gaze.y = fy.filter(py, fr.t);
+    // mediana de 3 quadros: elimina saltos isolados (falha de rastreamento) antes do filtro
+    S.rawX.push(px); S.rawY.push(py);
+    if (S.rawX.length > 3) { S.rawX.shift(); S.rawY.shift(); }
+    S.gaze.x = fx.filter(med3(S.rawX), fr.t);
+    S.gaze.y = fy.filter(med3(S.rawY), fr.t);
+    S.featBuf.push(fr.features);
+    if (S.featBuf.length > 12) S.featBuf.shift();
     dwell.update(S.gaze.x, S.gaze.y, tMs);
   }
   renderCursor();
+}
+
+const med3 = (a) => [...a].sort((x, y) => x - y)[a.length >> 1];
+
+function checkHeadDrift(fr, tMs) {
+  if (!S.headRef || S.name !== 'running') return;
+  const off = Math.max(Math.abs(fr.features[4] - S.headRef.x), Math.abs(fr.features[5] - S.headRef.y));
+  if (off <= 0.06) { S.driftSince = null; return; }
+  S.driftSince ??= tMs;
+  if (tMs - S.driftSince > 2500 && tMs - S.lastDriftNotice > 20000) {
+    S.lastDriftNotice = tMs;
+    notify('Sua cabeça mudou de posição. Volte à posição da calibração ou use "Recalibrar".');
+  }
 }
 
 function renderCursor() {

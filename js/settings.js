@@ -8,6 +8,7 @@ export const DEFAULTS = {
   blinkClick: false,
   showCamera: true,
   sound: true,
+  autoAdjust: true,
 };
 
 export function loadSettings() {
